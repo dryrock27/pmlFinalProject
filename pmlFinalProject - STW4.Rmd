@@ -50,9 +50,8 @@ dim(testClean)
 #dim(training)
 #dim(testing)
 
-
 ```
-## Cross Validation
+## Splitting the Training Data
 
 Before I begin building my model, I am going to split the training dataset I was provided into 2 parts (train and test).  This will give me an initial dataset that I can use to test how accurate each of the various models do at predicting the classe variable.  I chose to split out 70% into the train object and 30% into the test object.
 
@@ -71,13 +70,18 @@ dim(test)
 
 ## Building and Evaluation my Models
 
-First, lets look at a Classification Tree
+First, lets setup the control function for the models that we will be building.  We will use cross validation method with 5 folds within the trainControl() function of the caret package.
+
+```{r modelSetup}
+trControl <- trainControl(method="cv", number=5)
+```
+
+Then, we'll look at a Classification Tree model.
 
 ```{r classTree}
 cluster <- makeCluster(detectCores() -1)
 registerDoParallel(cluster)
 
-trControl <- trainControl(method="cv", number=5)
 modelCT <- train(classe ~ ., data=train, method="rpart", trControl=trControl)
 fancyRpartPlot(modelCT$finalModel)
 
@@ -87,9 +91,9 @@ confMatrixCT <- confusionMatrix(test$class,trainPredCT)
 confMatrixCT$table
 confMatrixCT$overall[1]
 ```
-With our Classification Tree model, accuracy was only 48.9%.  Since we had applied this to our 30% of the original training dataset to test the model, our out of sample error was above 50% for this model.
+With the Classification Tree model, accuracy was only 48.9%.  Since we had applied this to our 30% of the original training dataset to test the model, our out of sample error was above 50% for this model.
 
-Now, lets try looking at it with the Gradient Boosting Method
+Now, lets try looking at it with the Gradient Boosting Method.
 
 ```{r gbm}
 #modelGBM <- train(classe ~., data=train, method="gbm", trcontrol=trControl, verbose=FALSE)
@@ -103,7 +107,7 @@ confMatrixGBM$table
 confMatrixGBM$overall[1]
 
 ```
-With our Gradient Boosted Method Model, accuracy was jumped significantly to 96%.  Since we had applied this to our 30% of the original training dataset to test the model, our out of sample error was only 4% for this model.
+With the Gradient Boosted Method Model, accuracy was jumped significantly to 96%.  Since we had applied this to our 30% of the original training dataset to test the model, our out of sample error was only 4% for this model.
 
 Lastly, lets look at a Random Forests model.
 
@@ -114,10 +118,7 @@ Lastly, lets look at a Random Forests model.
 x <- train[,-53]
 y <- train[,53]
 
-controlRF <- trainControl(method="cv", number=5)
-#modelRf <- train(classe ~ ., data=train, method="rf", trControl=controlRF)
-
-modelRf <- train(x, y, data=train, method="rf", trControl=controlRF)
+modelRf <- train(x, y, data=train, method="rf", trControl=trControl)
 modelRf
 
 trainPredRF <- predict(modelRf, newdata=test)
@@ -128,7 +129,7 @@ confMatrixRF$overall[1]
 stopCluster(cluster)
 
 ```
-With our Random Forests model, accuracy was only 99.2%.  Since we had applied this to our 30% of the original training dataset to test the model, our out of sample error was even lower at only <.8% for this model.
+With the Random Forests model, accuracy was only 99.2%.  Since we had applied this to our 30% of the original training dataset to test the model, our out of sample error was even lower at only < .8% for this model.
 
 ## My Decision Process
 I had some challenges running the random forests model initially, it sat running for > 50 hours without completing the model.  Some [internet research](https://rpubs.com/lgreski/improvingCaretPerformance) helped with using the doParallel package allowed RStudio to take advantage of additional cores on the CPU, plus using the matrix input method for the train() function which is more efficient.  This allowed the random forests model to actually complete quicker than the gradient boosted method and be more accurate.  As a result, I would choose to use the more accurate model that also executed quicker on the hardware I had available to run the analysis on.
@@ -141,5 +142,3 @@ By applying my random forests model to the final test data set, my final results
 predict(modelRf, newdata=testClean)
 
 ```
-
-
