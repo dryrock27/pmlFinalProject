@@ -1,0 +1,145 @@
+---
+title: "Practical Machine Learning Final Project"
+author: "Steve Whetstone"
+date: "June 7, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(rattle)
+library(gbm)
+library(corrplot)
+library(doParallel)
+
+setwd("~/Coursera/Practical Machine Learning/Final Project")
+```
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har)  (see the section on the Weight Lifting Exercise Dataset).
+
+Note: The dataset used in this project is a courtesy of "Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements"
+
+## Load and Clean Data
+
+The two data files are located in my current working directory.  Both CSV files were loaded and a quick exploratory data analysis was performed on them.  I discovered a large number of variables seemed to just have NA for their data, so I chose to eliminate any variables that had more than 90% of the data NA.  I also removed the first seven columns of data as they were primarily used for identification of the test subject.  Combined, this reduced my datasets from 160 variables to 86 variables.
+
+```{r getData, include=FALSE}
+training <- read.csv('pml-training.csv', header=TRUE)
+testing <- read.csv('pml-testing.csv', header=TRUE)
+
+# remove variables with mostly NA values
+mostNA <- sapply(training, function(x) mean(is.na(x))) > 0.9
+training <- training[,mostNA==FALSE]
+testing <- testing[,mostNA==FALSE]
+
+RemoveCols <- which(colSums(is.na(training) | training =="")>0.9*dim(training)[1])
+trainClean <- training[,-RemoveCols]
+trainClean <- trainClean[,-c(1:7)]
+testClean <- testing[,-RemoveCols]
+testClean <- testClean[,-c(1:7)]
+
+# How many variables are left?
+dim(trainClean)
+dim(testClean)
+#dim(training)
+#dim(testing)
+
+
+```
+## Cross Validation
+
+Before I begin building my model, I am going to split the training dataset I was provided into 2 parts (train and test).  This will give me an initial dataset that I can use to test how accurate each of the various models do at predicting the classe variable.  I chose to split out 70% into the train object and 30% into the test object.
+
+```{r crossVal, include=FALSE}
+# Partition training data 
+
+set.seed(1227)
+inTrain <- createDataPartition(trainClean$classe, p=0.7, list=FALSE)
+train <- trainClean[inTrain,]
+test <- trainClean[-inTrain,]
+
+dim(train)
+dim(test)
+
+```
+
+## Building and Evaluation my Models
+
+First, lets look at a Classification Tree
+
+```{r classTree}
+cluster <- makeCluster(detectCores() -1)
+registerDoParallel(cluster)
+
+trControl <- trainControl(method="cv", number=5)
+modelCT <- train(classe ~ ., data=train, method="rpart", trControl=trControl)
+fancyRpartPlot(modelCT$finalModel)
+
+#Test it out
+trainPredCT <- predict(modelCT, newdata=test)
+confMatrixCT <- confusionMatrix(test$class,trainPredCT)
+confMatrixCT$table
+confMatrixCT$overall[1]
+```
+With our Classification Tree model, accuracy was only 48.9%.  Since we had applied this to our 30% of the original training dataset to test the model, our out of sample error was above 50% for this model.
+
+Now, lets try looking at it with the Gradient Boosting Method
+
+```{r gbm}
+#modelGBM <- train(classe ~., data=train, method="gbm", trcontrol=trControl, verbose=FALSE)
+modelGBM <- train(classe ~., data=train, method="gbm", verbose=FALSE)
+print(modelGBM)
+plot(modelGBM)
+
+trainPredGBM <- predict(modelGBM, newdata=test)
+confMatrixGBM <- confusionMatrix(test$classe,trainPredGBM)
+confMatrixGBM$table
+confMatrixGBM$overall[1]
+
+```
+With our Gradient Boosted Method Model, accuracy was jumped significantly to 96%.  Since we had applied this to our 30% of the original training dataset to test the model, our out of sample error was only 4% for this model.
+
+Lastly, lets look at a Random Forests model.
+
+```{r randomForest}
+#cluster <- makeCluster(detectCores() -1)
+#registerDoParallel(cluster)
+
+x <- train[,-53]
+y <- train[,53]
+
+controlRF <- trainControl(method="cv", number=5)
+#modelRf <- train(classe ~ ., data=train, method="rf", trControl=controlRF)
+
+modelRf <- train(x, y, data=train, method="rf", trControl=controlRF)
+modelRf
+
+trainPredRF <- predict(modelRf, newdata=test)
+confMatrixRF <- confusionMatrix(test$class,trainPredRF)
+confMatrixRF$table
+confMatrixRF$overall[1]
+
+stopCluster(cluster)
+
+```
+With our Random Forests model, accuracy was only 99.2%.  Since we had applied this to our 30% of the original training dataset to test the model, our out of sample error was even lower at only <.8% for this model.
+
+## My Decision Process
+I had some challenges running the random forests model initially, it sat running for > 50 hours without completing the model.  Some [internet research](https://rpubs.com/lgreski/improvingCaretPerformance) helped with using the doParallel package allowed RStudio to take advantage of additional cores on the CPU, plus using the matrix input method for the train() function which is more efficient.  This allowed the random forests model to actually complete quicker than the gradient boosted method and be more accurate.  As a result, I would choose to use the more accurate model that also executed quicker on the hardware I had available to run the analysis on.
+
+## Predictions using Test Data Set
+
+By applying my random forests model to the final test data set, my final results are:
+
+```{r finalResults}
+predict(modelRf, newdata=testClean)
+
+```
+
+
